@@ -17,6 +17,15 @@ UCustomFloatingPawnMovement::UCustomFloatingPawnMovement(const FObjectInitialize
 	TurningBoost = 8.0f;
 	bPositionCorrected = false;
 
+	// Gravity and ground settings
+	GravityScale = 980.f;  // Gravity force
+	GroundFriction = 8.0f;  // Friction when on flat ground
+	SlopeFriction = 4.0f;   // Friction when on slopes
+	MaxWalkableAngle = 45.0f;  // Maximum walkable slope angle
+	GroundTraceDistance = 200.f;  // Distance to check for ground
+	bIsOnGround = true;
+	bIsOnSteepSlope = false;
+
 	ResetMoveState();
 }
 
@@ -37,6 +46,9 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 	const AController* Controller = PawnOwner->GetController();
 	if (Controller && Controller->IsLocalController())
 	{
+		// Check if we're on the ground
+		CheckGround();
+
 		// apply input for local players but also for AI that's not following a navigation path at the moment
 		if (Controller->IsLocalPlayerController() == true || Controller->IsFollowingAPath() == false || NavMovementProperties.bUseAccelerationForPaths)
 		{
@@ -48,6 +60,9 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 		{
 			Velocity = Velocity.GetUnsafeNormal() * MaxSpeed;
 		}
+
+		// Apply friction if on ground
+		ApplyGroundFriction(DeltaTime);
 
 		LimitWorldBounds();
 		bPositionCorrected = false;
@@ -161,4 +176,100 @@ bool UCustomFloatingPawnMovement::ResolvePenetrationImpl(const FVector& Adjustme
 {
 	bPositionCorrected |= Super::ResolvePenetrationImpl(Adjustment, Hit, NewRotationQuat);
 	return bPositionCorrected;
+}
+
+void UCustomFloatingPawnMovement::CheckGround()
+{
+	if (!UpdatedComponent)
+	{
+		bIsOnGround = false;
+		bIsOnSteepSlope = false;
+		return;
+	}
+
+	const FVector StartLocation = UpdatedComponent->GetComponentLocation();
+	const FVector EndLocation = StartLocation - FVector(0.f, 0.f, GroundTraceDistance);
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(PawnOwner);
+
+	FHitResult HitResult;
+	bool bHit = GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		StartLocation,
+		EndLocation,
+		ECC_Visibility,
+		QueryParams
+	);
+
+	if (bHit && HitResult.bBlockingHit)
+	{
+		LastGroundHit = HitResult;
+		bIsOnGround = true;
+
+		// Calculate the angle of the slope
+		const FVector UpVector = FVector::UpVector;
+		const float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitResult.Normal, UpVector)));
+
+		// Check if the slope is too steep
+		bIsOnSteepSlope = (SlopeAngle > MaxWalkableAngle);
+
+		// If on ground and not moving down fast, zero out downward velocity
+		if (!bIsOnSteepSlope && Velocity.Z < 0.f)
+		{
+			Velocity.Z = 0.f;
+		}
+	}
+	else
+	{
+		bIsOnGround = false;
+		bIsOnSteepSlope = false;
+	}
+}
+
+void UCustomFloatingPawnMovement::ApplyGroundFriction(float DeltaTime)
+{
+	if (!bIsOnGround || Velocity.SizeSquared() < KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// Get horizontal velocity (X and Y only)
+	FVector HorizontalVelocity = FVector(Velocity.X, Velocity.Y, 0.f);
+	const float HorizontalSpeed = HorizontalVelocity.Size();
+
+	if (HorizontalSpeed > KINDA_SMALL_NUMBER)
+	{
+		// Choose friction based on slope
+		float FrictionToApply = bIsOnSteepSlope ? SlopeFriction : GroundFriction;
+
+		// On steep slopes, apply friction in the direction opposite to the slope's pull
+		if (bIsOnSteepSlope)
+		{
+			// Project the slope normal onto the horizontal plane to get slide direction
+			FVector SlopeDirection = FVector(LastGroundHit.Normal.X, LastGroundHit.Normal.Y, 0.f);
+			if (SlopeDirection.SizeSquared() > KINDA_SMALL_NUMBER)
+			{
+				SlopeDirection.Normalize();
+				
+				// Apply friction against the sliding direction
+				const float SlideSpeed = FVector::DotProduct(HorizontalVelocity, SlopeDirection);
+				if (FMath::Abs(SlideSpeed) > KINDA_SMALL_NUMBER)
+				{
+					const FVector FrictionForce = -SlopeDirection * SlideSpeed * FrictionToApply * DeltaTime;
+					HorizontalVelocity += FrictionForce;
+				}
+			}
+		}
+		else
+		{
+			// On flat ground, apply friction to all horizontal movement
+			const float NewHorizontalSpeed = FMath::Max(0.f, HorizontalSpeed - FrictionToApply * DeltaTime * 100.f);
+			HorizontalVelocity = HorizontalVelocity.GetSafeNormal() * NewHorizontalSpeed;
+		}
+
+		// Update velocity with modified horizontal component
+		Velocity.X = HorizontalVelocity.X;
+		Velocity.Y = HorizontalVelocity.Y;
+	}
 }

@@ -67,5 +67,44 @@ protected:
 	/** Set to true when a position correction is applied. Used to avoid recalculating velocity when this occurs. */
 	UPROPERTY(Transient)
 	uint32 bPositionCorrected:1;
+
+public:
+	/** Gravity applied to the pawn (negative value to pull down) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float GravityScale;
+
+	/** Friction coefficient applied when on ground. Higher values = more friction */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float GroundFriction;
+
+	/** Friction coefficient applied when sliding on slopes. Higher values = more friction */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float SlopeFriction;
+
+	/** Maximum angle (in degrees) that is considered walkable/stable ground */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement, meta=(ClampMin="0.0", ClampMax="90.0", UIMin="0.0", UIMax="90.0"))
+	float MaxWalkableAngle;
+
+	/** Distance to trace downward to check for ground */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float GroundTraceDistance;
+
+	/** Whether the pawn is currently on the ground */
+	UPROPERTY(BlueprintReadOnly, Category=FloatingPawnMovement)
+	bool bIsOnGround;
+
+	/** Whether the pawn is on a slope that's too steep to walk */
+	UPROPERTY(BlueprintReadOnly, Category=FloatingPawnMovement)
+	bool bIsOnSteepSlope;
+
+protected:
+	/** Check if we're on the ground and update ground state */
+	virtual void CheckGround();
+
+	/** Apply friction based on ground state */
+	virtual void ApplyGroundFriction(float DeltaTime);
+
+	/** The last ground hit result */
+	FHitResult LastGroundHit;
 };
 
