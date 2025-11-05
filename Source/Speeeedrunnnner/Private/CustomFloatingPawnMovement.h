@@ -69,10 +69,18 @@ protected:
 	uint32 bPositionCorrected:1;
 
 public:
-	/** Gravity applied to the pawn (negative value to pull down) */
+	/** Gravity applied to the pawn (-1,1) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
 	float GravityScale;
+	
+	/** Gravity forca aplicada -9.8 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float GravityForce;
 
+	/** Gravity multiplicador para nao mexer nas outras variaveis 500 base */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
+	float GravityMultiplier;
+	
 	/** Friction coefficient applied when on ground. Higher values = more friction */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
 	float GroundFriction;

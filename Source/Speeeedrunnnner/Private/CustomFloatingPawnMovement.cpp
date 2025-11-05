@@ -18,12 +18,14 @@ UCustomFloatingPawnMovement::UCustomFloatingPawnMovement(const FObjectInitialize
 	bPositionCorrected = false;
 
 	// Gravity and ground settings
-	GravityScale = 980.f;  // Gravity force
+	GravityScale = 1.f;  // Gravity force
 	GroundFriction = 8.0f;  // Friction when on flat ground
 	SlopeFriction = 4.0f;   // Friction when on slopes
 	MaxWalkableAngle = 45.0f;  // Maximum walkable slope angle
 	GroundTraceDistance = 200.f;  // Distance to check for ground
-	bIsOnGround = true;
+	GravityForce = -9.8f; // gravidade
+	GravityMultiplier = 500.0f; //gravity multiplier to no bother with force and scale
+	bIsOnGround = false;
 	bIsOnSteepSlope = false;
 
 	ResetMoveState();
@@ -43,6 +45,11 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 		return;
 	}
 
+	if (!bIsOnGround) // If not grounded and moving downwards add gravidade
+	{
+		Velocity.Z += GravityScale * GravityForce * GravityMultiplier * DeltaTime;
+	}
+	
 	const AController* Controller = PawnOwner->GetController();
 	if (Controller && Controller->IsLocalController())
 	{
@@ -201,6 +208,18 @@ void UCustomFloatingPawnMovement::CheckGround()
 		ECC_Visibility,
 		QueryParams
 	);
+
+	// Draw debug line DELETAR \/
+	DrawDebugLine(
+		GetWorld(),
+		StartLocation,
+		EndLocation,
+		bHit ? FColor::Green : FColor::Red,
+		true,  // Persistent lines
+		-1.0f, // Lifetime (-1 means persistent until manually cleared)
+		0,     // Depth priority
+		2.0f   // Thickness
+	); // DELETAR /\
 
 	if (bHit && HitResult.bBlockingHit)
 	{
