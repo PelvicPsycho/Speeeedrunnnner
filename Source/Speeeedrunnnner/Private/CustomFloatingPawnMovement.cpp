@@ -70,7 +70,7 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 
 		// Apply friction if on ground
 		ApplyGroundFriction(DeltaTime);
-
+		
 		LimitWorldBounds();
 		bPositionCorrected = false;
 
@@ -94,7 +94,7 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 
 			// Update velocity
 			// We don't want position changes to vastly reverse our direction (which can happen due to penetration fixups etc)
-			if (!bPositionCorrected)
+			if (!bPositionCorrected && !bIsOnGround)
 			{
 				const FVector NewLocation = UpdatedComponent->GetComponentLocation();
 				Velocity = ((NewLocation - OldLocation) / DeltaTime);
@@ -144,22 +144,22 @@ void UCustomFloatingPawnMovement::ApplyControlInputToVelocity(float DeltaTime)
 	}
 	else
 	{
-		// Dampen velocity magnitude based on deceleration (only X and Y, preserve Z).
-		if (Velocity.SizeSquared() > 0.f)
+		// ONLY dampen velocity when on ground, not in air
+		if (bIsOnGround && Velocity.SizeSquared() > 0.f)
 		{
 			const FVector OldVelocity = Velocity;
 			const float OldVelocityZ = Velocity.Z; // Store Z component
-			
+		
 			// Get horizontal velocity (X and Y only)
 			FVector HorizontalVelocity = FVector(Velocity.X, Velocity.Y, 0.f);
 			const float HorizontalSpeed = HorizontalVelocity.Size();
-			
+		
 			if (HorizontalSpeed > 0.f)
 			{
 				const float NewHorizontalSpeed = FMath::Max(HorizontalSpeed - FMath::Abs(Deceleration) * DeltaTime, 0.f);
 				HorizontalVelocity = HorizontalVelocity.GetSafeNormal() * NewHorizontalSpeed;
 			}
-			
+		
 			// Reconstruct velocity with dampened X/Y and original Z
 			Velocity = FVector(HorizontalVelocity.X, HorizontalVelocity.Y, OldVelocityZ);
 
