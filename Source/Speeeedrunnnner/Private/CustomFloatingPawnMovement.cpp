@@ -94,7 +94,7 @@ void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick
 
 			// Update velocity
 			// We don't want position changes to vastly reverse our direction (which can happen due to penetration fixups etc)
-			if (!bPositionCorrected && !bIsOnGround)
+			if (!bPositionCorrected && bIsOnGround)
 			{
 				const FVector NewLocation = UpdatedComponent->GetComponentLocation();
 				Velocity = ((NewLocation - OldLocation) / DeltaTime);
@@ -226,17 +226,36 @@ void UCustomFloatingPawnMovement::CheckGround()
 		LastGroundHit = HitResult;
 		bIsOnGround = true;
 
-		// Calculate the angle of the slope
-		const FVector UpVector = FVector::UpVector;
-		const float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitResult.Normal, UpVector)));
+		// Calculate the angle of the slope RELATIVE TO GRAVITY DIRECTION
+		// Use DownVector when inverted, UpVector when normal
+		const FVector GravityUpVector = GravityScale < 0.f ? FVector::DownVector : FVector::UpVector;
+		const float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitResult.Normal, GravityUpVector)));
+
+		// PRINT SLOPE ANGLE
+		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("Slope Angle: %.2f degrees (GravityScale: %.1f)"), SlopeAngle, GravityScale));
 
 		// Check if the slope is too steep
 		bIsOnSteepSlope = (SlopeAngle > MaxWalkableAngle);
 
-		// If on ground and not moving down fast, zero out downward velocity
-		if (!bIsOnSteepSlope && Velocity.Z < 0.f)
+		// Zero out velocity in the direction of gravity when on ground
+		if (!bIsOnSteepSlope)
 		{
-			Velocity.Z = 0.f;
+			if (GravityScale < 0.f)
+			{
+				// Inverted gravity: zero positive Z (moving away from ceiling)
+				if (Velocity.Z > 0.f)
+				{
+					Velocity.Z = 0.f;
+				}
+			}
+			else
+			{
+				// Normal gravity: zero negative Z (moving down into floor)
+				if (Velocity.Z < 0.f)
+				{
+					Velocity.Z = 0.f;
+				}
+			}
 		}
 	}
 	else
