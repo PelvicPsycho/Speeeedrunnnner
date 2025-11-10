@@ -210,16 +210,16 @@ void UCustomFloatingPawnMovement::CheckGround()
 	);
 
 	// Draw debug line DELETAR \/
-	DrawDebugLine(
-		GetWorld(),
-		StartLocation,
-		EndLocation,
-		bHit ? FColor::Green : FColor::Red,
-		true,  // Persistent lines
-		-1.0f, // Lifetime (-1 means persistent until manually cleared)
-		0,     // Depth priority
-		2.0f   // Thickness
-	); // DELETAR /\
+//	DrawDebugLine(
+//		GetWorld(),
+//		StartLocation,
+//		EndLocation,
+//		bHit ? FColor::Green : FColor::Red,
+//		true,  // Persistent lines
+//		-1.0f, // Lifetime (-1 means persistent until manually cleared)
+//		0,     // Depth priority
+//		2.0f   // Thickness
+//	); // DELETAR /\
 
 	if (bHit && HitResult.bBlockingHit)
 	{
@@ -232,7 +232,7 @@ void UCustomFloatingPawnMovement::CheckGround()
 		const float SlopeAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(HitResult.Normal, GravityUpVector)));
 
 		// PRINT SLOPE ANGLE
-		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("Slope Angle: %.2f degrees (GravityScale: %.1f)"), SlopeAngle, GravityScale));
+//		GEngine->AddOnScreenDebugMessage(-1, 0.0f, FColor::Yellow, FString::Printf(TEXT("Slope Angle: %.2f degrees (GravityScale: %.1f)"), SlopeAngle, GravityScale));
 
 		// Check if the slope is too steep
 		bIsOnSteepSlope = (SlopeAngle > MaxWalkableAngle);
