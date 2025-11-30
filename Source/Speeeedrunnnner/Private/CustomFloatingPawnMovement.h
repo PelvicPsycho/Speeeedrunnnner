@@ -48,6 +48,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=FloatingPawnMovement)
 	float Deceleration;
 
+	// Adicione isso na sua classe no .h
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = FloatingPawnMovement)
+	float AirControl = 0.2f; // 1.0 = mesmo controle que no chão, 0.1 = muito pouco controle
+	
 	/**
 	 * Setting affecting extra force applied when changing direction, making turns have less drift and become more responsive.
 	 * Velocity magnitude is not allowed to increase, that only happens due to normal acceleration. It may decrease with large direction changes.

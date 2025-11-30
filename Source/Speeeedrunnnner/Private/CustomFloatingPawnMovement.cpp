@@ -24,6 +24,7 @@ UCustomFloatingPawnMovement::UCustomFloatingPawnMovement(const FObjectInitialize
 	MaxWalkableAngle = 45.0f;  // Maximum walkable slope angle
 	GroundTraceDistance = 200.f;  // Distance to check for ground
 	GravityForce = -9.8f; // gravidade
+	AirControl = 0.5f; // Valor sugerido para testar
 	GravityMultiplier = 500.0f; //gravity multiplier to no bother with force and scale
 	bIsOnGround = false;
 	bIsOnSteepSlope = false;
@@ -126,57 +127,93 @@ bool UCustomFloatingPawnMovement::LimitWorldBounds()
 
 void UCustomFloatingPawnMovement::ApplyControlInputToVelocity(float DeltaTime)
 {
-	const FVector ControlAcceleration = GetPendingInputVector().GetClampedToMaxSize(1.f);
+    const FVector ControlAcceleration = GetPendingInputVector().GetClampedToMaxSize(1.f);
+    const float AnalogInputModifier = (ControlAcceleration.SizeSquared() > 0.f ? ControlAcceleration.Size() : 0.f);
+    const float MaxPawnSpeed = GetMaxSpeed() * AnalogInputModifier;
+    
+    // 1. Separar a velocidade Vertical da Horizontal para proteger a gravidade
+    float OldVelocityZ = Velocity.Z;
+    FVector HorizontalVelocity = FVector(Velocity.X, Velocity.Y, 0.f);
+    float CurrentHorizontalSpeed = HorizontalVelocity.Size();
 
-	const float AnalogInputModifier = (ControlAcceleration.SizeSquared() > 0.f ? ControlAcceleration.Size() : 0.f);
-	const float MaxPawnSpeed = GetMaxSpeed() * AnalogInputModifier;
-	const bool bExceedingMaxSpeed = IsExceedingMaxSpeed(MaxPawnSpeed);
+    // ==========================================
+    // LÓGICA DE CHÃO
+    // ==========================================
+    if (bIsOnGround)
+    {
+        // Se tem input, aplica o Turning Boost (curva rápida)
+        if (AnalogInputModifier > 0.f && CurrentHorizontalSpeed > 0.f)
+        {
+            const float TimeScale = FMath::Clamp(DeltaTime * TurningBoost, 0.f, 1.f);
+            // Essa formula mágica gira o vetor de velocidade em direção ao Input sem perder magnitude
+            HorizontalVelocity = HorizontalVelocity + (ControlAcceleration * CurrentHorizontalSpeed - HorizontalVelocity) * TimeScale;
+        }
 
-	if (AnalogInputModifier > 0.f && !bExceedingMaxSpeed)
-	{
-		// Apply change in velocity direction
-		if (Velocity.SizeSquared() > 0.f)
-		{
-			// Change direction faster than only using acceleration, but never increase velocity magnitude.
-			const float TimeScale = FMath::Clamp(DeltaTime * TurningBoost, 0.f, 1.f);
-			Velocity = Velocity + (ControlAcceleration * Velocity.Size() - Velocity) * TimeScale;
-		}
-	}
-	else
-	{
-		// ONLY dampen velocity when on ground, not in air
-		if (bIsOnGround && Velocity.SizeSquared() > 0.f)
-		{
-			const FVector OldVelocity = Velocity;
-			const float OldVelocityZ = Velocity.Z; // Store Z component
-		
-			// Get horizontal velocity (X and Y only)
-			FVector HorizontalVelocity = FVector(Velocity.X, Velocity.Y, 0.f);
-			const float HorizontalSpeed = HorizontalVelocity.Size();
-		
-			if (HorizontalSpeed > 0.f)
-			{
-				const float NewHorizontalSpeed = FMath::Max(HorizontalSpeed - FMath::Abs(Deceleration) * DeltaTime, 0.f);
-				HorizontalVelocity = HorizontalVelocity.GetSafeNormal() * NewHorizontalSpeed;
-			}
-		
-			// Reconstruct velocity with dampened X/Y and original Z
-			Velocity = FVector(HorizontalVelocity.X, HorizontalVelocity.Y, OldVelocityZ);
+        // Deceleração (Fricção) quando solta o controle
+        if (AnalogInputModifier == 0.f && CurrentHorizontalSpeed > 0.f)
+        {
+            const float NewHorizontalSpeed = FMath::Max(CurrentHorizontalSpeed - FMath::Abs(Deceleration) * DeltaTime, 0.f);
+            HorizontalVelocity = HorizontalVelocity.GetSafeNormal() * NewHorizontalSpeed;
+        }
 
-			// Don't allow braking to lower us below max speed if we started above it.
-			if (bExceedingMaxSpeed && Velocity.SizeSquared() < FMath::Square(MaxPawnSpeed))
-			{
-				Velocity = OldVelocity.GetSafeNormal() * MaxPawnSpeed;
-			}
-		}
-	}
+        // Aceleração Padrão
+        const bool bExceedingMaxSpeed = CurrentHorizontalSpeed > MaxPawnSpeed;
+        const float TargetMaxSpeed = bExceedingMaxSpeed ? CurrentHorizontalSpeed : MaxPawnSpeed;
+        
+        HorizontalVelocity += ControlAcceleration * FMath::Abs(Acceleration) * DeltaTime;
+        HorizontalVelocity = HorizontalVelocity.GetClampedToMaxSize(TargetMaxSpeed);
+    }
+    // ==========================================
+    // LÓGICA DE AR (AQUI ESTÁ A CORREÇÃO)
+    // ==========================================
+    else 
+    {
+        if (AnalogInputModifier > 0.f)
+        {
+            // 1. STEERING NO AR (O PULO DO GATO)
+            // Usamos o AirControl para definir o quão forte conseguimos "girar" o vetor no ar.
+            // Se AirControl for 1.0, vira igual no chão. Se for 0.1, vira muito pouco.
+            if (CurrentHorizontalSpeed > 0.f)
+            {
+                // Multiplicamos o TurningBoost pelo AirControl
+                const float AirTurnScale = FMath::Clamp(DeltaTime * TurningBoost * AirControl, 0.f, 1.f);
+                HorizontalVelocity = HorizontalVelocity + (ControlAcceleration * CurrentHorizontalSpeed - HorizontalVelocity) * AirTurnScale;
+            }
 
-	// Apply acceleration and clamp velocity magnitude.
-	const float NewMaxSpeed = (IsExceedingMaxSpeed(MaxPawnSpeed)) ? Velocity.Size() : MaxPawnSpeed;
-	Velocity += ControlAcceleration * FMath::Abs(Acceleration) * DeltaTime;
-	Velocity = Velocity.GetClampedToMaxSize(NewMaxSpeed);
+            // 2. ACELERAÇÃO NO AR
+            // Adiciona velocidade na direção do input (para ganhar velocidade se estiver parado ou lento)
+            FVector AirAccel = ControlAcceleration * FMath::Abs(Acceleration) * AirControl * DeltaTime;
+            HorizontalVelocity += AirAccel;
 
-	ConsumeInputVector();
+            // 3. LIMITAR VELOCIDADE NO AR (OPCIONAL)
+            // Isso impede que ele acelere infinitamente, mas respeita se ele já estava rápido (ex: lançado por uma mola)
+            const float AirMaxSpeed = MaxSpeed; 
+            if (HorizontalVelocity.Size() > AirMaxSpeed)
+            {
+                // Se já estamos rápidos, só clampamos se tentarmos acelerar AINDA MAIS.
+                // Caso contrário, mantemos a velocidade atual (preserva momentum de launch pads)
+                float SpeedToClamp = FMath::Max(CurrentHorizontalSpeed, AirMaxSpeed);
+                
+                // Se o input estiver oposto à velocidade, permitimos reduzir a velocidade (freio aéreo)
+                // Se não quiser freio aéreo, remova a lógica abaixo e use apenas o GetClampedToMaxSize normal.
+                bool bMovingAgainstInput = (FVector::DotProduct(HorizontalVelocity.GetSafeNormal(), ControlAcceleration) < -0.2f);
+                if(bMovingAgainstInput)
+                {
+                     // Permite desacelerar no ar
+                     SpeedToClamp = AirMaxSpeed;
+                }
+
+                HorizontalVelocity = HorizontalVelocity.GetClampedToMaxSize(SpeedToClamp);
+            }
+        }
+        // Nota: Não aplicamos Deceleration (fricção) no ar quando solta o controle, 
+        // para manter o arco do pulo natural.
+    }
+
+    // Reconstrói o vetor final com a Gravidade original
+    Velocity = FVector(HorizontalVelocity.X, HorizontalVelocity.Y, OldVelocityZ);
+
+    ConsumeInputVector();
 }
 
 bool UCustomFloatingPawnMovement::ResolvePenetrationImpl(const FVector& Adjustment, const FHitResult& Hit, const FQuat& NewRotationQuat)
