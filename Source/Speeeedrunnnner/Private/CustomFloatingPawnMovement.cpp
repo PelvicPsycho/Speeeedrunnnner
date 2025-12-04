@@ -34,50 +34,61 @@ UCustomFloatingPawnMovement::UCustomFloatingPawnMovement(const FObjectInitialize
 
 void UCustomFloatingPawnMovement::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
-	if (ShouldSkipUpdate(DeltaTime))
-	{
-		return;
-	}
+    if (ShouldSkipUpdate(DeltaTime))
+    {
+       return;
+    }
 
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!PawnOwner || !UpdatedComponent)
-	{
-		return;
-	}
+    if (!PawnOwner || !UpdatedComponent)
+    {
+       return;
+    }
+    
+    // --- CORREÇÃO AQUI ---
+    // A física deve rodar se formos o Cliente dono (Locally Controlled) OU se formos o Servidor (Authority)
+    // Se for um "Simulated Proxy" (outro jogador na minha tela), não rodamos a física, apenas recebemos a posição pela rede via ReplicateMovement.
+    bool bShouldSimulate = PawnOwner->IsLocallyControlled() || PawnOwner->HasAuthority();
 
-	if (!bIsOnGround) // If not grounded and moving downwards add gravidade
-	{
-		Velocity.Z += GravityScale * GravityForce * GravityMultiplier * DeltaTime;
-	}
-	
-	const AController* Controller = PawnOwner->GetController();
-	if (Controller && Controller->IsLocalController())
-	{
-		// Check if we're on the ground
-		CheckGround();
+    if (bShouldSimulate)
+    {
+        // Aplica gravidade se não estiver no chão
+        if (!bIsOnGround) 
+        {
+           Velocity.Z += GravityScale * GravityForce * GravityMultiplier * DeltaTime;
+        }
 
-		// apply input for local players but also for AI that's not following a navigation path at the moment
-		if (Controller->IsLocalPlayerController() == true || Controller->IsFollowingAPath() == false || NavMovementProperties.bUseAccelerationForPaths)
-		{
-			ApplyControlInputToVelocity(DeltaTime);
-		}
-		// if it's not player controller, but we do have a controller, then it's AI
-		// (that's not following a path) and we need to limit the speed
-		else if (IsExceedingMaxSpeed(MaxSpeed) == true)
-		{
-			Velocity = Velocity.GetUnsafeNormal() * MaxSpeed;
-		}
+        const AController* Controller = PawnOwner->GetController();
 
-		// Apply friction if on ground
-		ApplyGroundFriction(DeltaTime);
-		
-		LimitWorldBounds();
-		bPositionCorrected = false;
+        // Check if we're on the ground
+        CheckGround();
+        
+        // Se temos um controlador (seja Player ou AI) ou se somos o Servidor processando input recebido via RPC
+        if (Controller)
+        {
+            // apply input for local players but also for AI that's not following a navigation path at the moment
+            // Removemos a checagem restrita de IsLocalPlayerController aqui para permitir que o Server processe
+            if (Controller->IsLocalController() || PawnOwner->HasAuthority() || Controller->IsFollowingAPath() == false || NavMovementProperties.bUseAccelerationForPaths)
+            {
+               ApplyControlInputToVelocity(DeltaTime);
+            }
+            // if it's not player controller... (lógica de AI)
+            else if (IsExceedingMaxSpeed(MaxSpeed) == true)
+            {
+               Velocity = Velocity.GetUnsafeNormal() * MaxSpeed;
+            }
+        }
 
-		// Move actor
-		FVector Delta = Velocity * DeltaTime;
+       // Apply friction if on ground
+       ApplyGroundFriction(DeltaTime);
+       
+       LimitWorldBounds();
+       bPositionCorrected = false;
 
+       // Move actor
+       FVector Delta = Velocity * DeltaTime;
+    	
 		if (!Delta.IsNearlyZero(1e-6f))
 		{
 			const FVector OldLocation = UpdatedComponent->GetComponentLocation();
